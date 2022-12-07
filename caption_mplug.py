@@ -127,6 +127,7 @@ def evaluation(model, data_loader, tokenizer, device, config):
         for image_id, topk_id, topk_prob, gold_caption_list in zip(image_ids, topk_ids, topk_probs, gold_caption):
             ans = tokenizer.decode(topk_id[0]).replace("[SEP]", "").replace("[CLS]", "").replace("[PAD]", "").strip()
             result.append({"question_id": image_id, "pred_caption": ans, "gold_caption": gold_caption_list})
+        break
     return result
 
 
@@ -177,7 +178,8 @@ def cal_metric(result_file):
     for each in result_list:
         predicts.append(each["pred_caption"])
         answers.append(each["gold_caption"])
-    evaluator = language_evaluation.CocoEvaluator(verbose=False)
+    evaluator = language_evaluation.CocoEvaluator(verbose=False,
+                                                  coco_types=["BLEU", "ROUGE_L", "CIDEr"], )
     results = evaluator.run_evaluation(predicts, answers)
     print(len(result_list), results)
     return results
@@ -350,14 +352,14 @@ if __name__ == '__main__':
     parser.add_argument('--world_size', default=1, type=int, help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     parser.add_argument('--distributed', default=False, type=bool)
-    parser.add_argument('--do_two_optim', action='store_true')
+    parser.add_argument('--do_two_optim', action='store_true', default=True)
     parser.add_argument('--add_object', action='store_true', default=True,
                         help="whether to use object_label in annotations")
     parser.add_argument('--do_amp', action='store_true', default=False, )
     parser.add_argument('--no_init_decocde', action='store_true')
     parser.add_argument('--do_accum', action='store_true')
     parser.add_argument('--accum_steps', default=4, type=int)
-    parser.add_argument("--is-train", default=True)
+    parser.add_argument("--is-train", default=False)
     args = parser.parse_args()
 
     config = yaml.load(open(args.config, 'r'), Loader=yaml.Loader)

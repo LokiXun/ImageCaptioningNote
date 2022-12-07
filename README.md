@@ -18,21 +18,21 @@ We presents mPLUG, a new vision-language foundation model for both cross-modal u
 
 * Pre-trained models
 
- 
+
 For VQA and image captioning tasks, we do an additional continue pre-training on 4M image-text pairs based mplug.en.large to get mplug.en.large.v2.
- 
- 
+
+
 |Model | Visual Backbone | Text Enc Layers | Fusion Layers | Text Dec Layers | #params | Download |
 |------------------------|-------------------------------------------|------|------|------|------|-----|
 |mplug.en.base | [vit-b-16](https://alice-open.oss-cn-zhangjiakou.aliyuncs.com/mPLUG/ViT-B-16.tar) | 6 | 6 | 12 | 350M | [mplug.en.base](https://alice-open.oss-cn-zhangjiakou.aliyuncs.com/mPLUG/mplug_base.pth) |
 |mplug.en.large | [vit-l-14](https://alice-open.oss-cn-zhangjiakou.aliyuncs.com/mPLUG/ViT-L-14.tar) | 6 | 6 | 12 | 600M | [mplug.en.large](https://alice-open.oss-cn-zhangjiakou.aliyuncs.com/mPLUG/mplug_large.pth) |
 |mplug.en.large.v2 | [vit-l-14](https://alice-open.oss-cn-zhangjiakou.aliyuncs.com/mPLUG/ViT-L-14.tar) | 6 | 6 | 12 | 600M | [mplug.en.large.v2](https://alice-open.oss-cn-zhangjiakou.aliyuncs.com/mPLUG/mplug_large_v2.pth) |
 |mplug.en.huge | vit-l-14 | 24 | 6 | 12 | 1.1B | comming soon |
-                                                                     
+
 
 * Pre-train Datasets
 
-                                                                        
+  ​                                                                      
 | | COCO | VG | SBU | CC3M | CC13M |
 |------------------------|-------------------------------------------|------|------|------|------|
 |image | 113K | 100K | 860K | 3M | 10M | 
@@ -201,8 +201,8 @@ Comming soon.
        
                                                                                           
 ### Image Captioning
-     
-                                                                                          
+
+
 1. Download COCO Caption dataset from the original websites.
 2. Download and extract the provided dataset json files.
 3. Download language evalution tool([language_evalution](https://alice-open.oss-cn-zhangjiakou.aliyuncs.com/mPLUG/language_evalution.tar)).
@@ -211,7 +211,7 @@ Comming soon.
 <pre>sh scripts/caption_mplug_base.sh</pre> 
 <pre>sh scripts/caption_mplug_large.sh</pre>  
 
-                                                                                          
+
 ### Image-text Retrieval
 1. Download MSCOCO or Flickr30k datasets from the original websites.
 2. Download and extract the provided dataset json files.

@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from PIL import Image
+from typing import Tuple
 
 from dataset.caption_dataset import re_train_dataset, re_eval_dataset, pretrain_dataset_4m, coco_dataset, nocaps_dataset
 from dataset.nlvr_dataset import nlvr_dataset
@@ -13,7 +14,8 @@ from dataset.video_dataset import vatex_video_caps_dataset
 from dataset.randaugment import RandomAugment
 
 
-def create_dataset(dataset, config, epoch=None):
+def get_transform(config) -> Tuple[transforms.Compose, transforms.Compose, transforms.Compose]:
+    """pretrain, train, test dta_transform"""
     normalize = transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711))
 
     pretrain_transform = transforms.Compose([
@@ -37,6 +39,12 @@ def create_dataset(dataset, config, epoch=None):
         transforms.ToTensor(),
         normalize,
     ])
+
+    return pretrain_transform, train_transform, test_transform
+
+
+def create_dataset(dataset, config, epoch=None):
+    pretrain_transform, train_transform, test_transform = get_transform(config=config)
 
     if dataset == 'pretrain':
         dataset = pretrain_dataset_4m(config['train_file'], pretrain_transform,
