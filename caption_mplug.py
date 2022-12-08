@@ -18,6 +18,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
+import wandb
 
 from models.model_caption_mplug import MPLUG
 from models.vit import interpolate_pos_embed, resize_pos_embed
@@ -27,6 +28,9 @@ from dataset.utils import save_result
 from dataset import create_dataset, create_sampler, create_loader, coco_collate_fn
 from scheduler import create_scheduler
 from optim import create_optimizer, create_two_optimizer
+from utils_module.logging_utils_local import get_logger
+
+logger = get_logger(name="mPLUG_imageCaptioning_train")
 
 
 def train(model, data_loader, optimizer, tokenizer, epoch, warmup_steps, device, scheduler, config, do_amp=False,
@@ -82,6 +86,12 @@ def train(model, data_loader, optimizer, tokenizer, epoch, warmup_steps, device,
             optimizer.step()
             optimizer.zero_grad()
 
+        try:
+            wandb.log({"train_total_loss": loss})
+            wandb.log({"lr": optimizer.param_groups[0]['lr']})
+        except Exception as e:
+            logger.error(f"wandb error={e}")
+
         metric_logger.update(loss=loss.item())
 
         if do_two_optim:
@@ -132,7 +142,6 @@ def evaluation(model, data_loader, tokenizer, device, config):
         for image_id, topk_id, topk_prob, gold_caption_list in zip(image_ids, topk_ids, topk_probs, gold_caption):
             ans = tokenizer.decode(topk_id[0]).replace("[SEP]", "").replace("[CLS]", "").replace("[PAD]", "").strip()
             result.append({"question_id": image_id, "pred_caption": ans, "gold_caption": gold_caption_list})
-        break
     return result
 
 
@@ -206,6 +215,13 @@ def main(args, config):
     start_epoch = 0
     max_epoch = config['schedular']['epochs']
     warmup_steps = config['schedular']['warmup_epochs']
+
+    if args.is_train and args.use_wandb:
+        print(f"----------------using wandb!")
+        wandb.init(
+            project="mPLUG_imageCaptioning",
+            name=f"{args.log_time}_{config['clip_name']}"
+        )
 
     #### Dataset ####
     print("Creating vqa datasets")
@@ -315,19 +331,31 @@ def main(args, config):
         result_file = save_result(vqa_result, args.result_dir, 'vqa_result_epoch%d' % epoch)
         if utils.is_main_process():
             result = cal_metric(result_file)
+            try:
+                wandb.log({"Bleu_1": result['Bleu_1']})
+                wandb.log({"Bleu_2": result['Bleu_2']})
+                wandb.log({"Bleu_3": result['Bleu_3']})
+                wandb.log({"Bleu_4": result['Bleu_4']})
+                wandb.log({"ROUGE_L": result['ROUGE_L']})
+                wandb.log({"CIDEr": result['CIDEr']})
+            except Exception as e:
+                logger.exception(f"wandb error={e}")
+
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                          'epoch': epoch,
                          }
             with open(os.path.join(args.output_dir, "log.txt"), "a") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
+            output_dir = Path(args.output_dir).resolve().joinpath(args.log_time)
+            checkpoints_save_path = output_dir.joinpath(f'checkpoint_{epoch:02d}.pth').as_posix()
             torch.save({
                 'model': model_without_ddp.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'lr_scheduler': lr_scheduler.state_dict(),
                 'config': config,
                 'epoch': epoch,
-            }, os.path.join(args.output_dir, 'checkpoint_%02d.pth' % epoch))
+            }, checkpoints_save_path)
 
         # dist.barrier()
 
@@ -364,7 +392,9 @@ if __name__ == '__main__':
     parser.add_argument('--no_init_decocde', action='store_true')
     parser.add_argument('--do_accum', action='store_true')
     parser.add_argument('--accum_steps', default=4, type=int)
-    parser.add_argument("--is-train", default=False)
+    parser.add_argument("--is-train", default=True)
+    parser.add_argument("--use_wandb", default=False)
+    parser.add_argument('--log_time', default='mPLUG_imageCaptioning')
     args = parser.parse_args()
 
     config = yaml.load(open(args.config, 'r'), Loader=yaml.Loader)
