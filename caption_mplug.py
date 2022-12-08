@@ -347,15 +347,13 @@ def main(args, config):
             with open(os.path.join(args.output_dir, "log.txt"), "a") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
-            output_dir = Path(args.output_dir).resolve().joinpath(args.log_time)
-            checkpoints_save_path = output_dir.joinpath(f'checkpoint_{epoch:02d}.pth').as_posix()
             torch.save({
                 'model': model_without_ddp.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'lr_scheduler': lr_scheduler.state_dict(),
                 'config': config,
                 'epoch': epoch,
-            }, checkpoints_save_path)
+            }, os.path.join(args.output_dir, args.log_time, f'checkpoint_{epoch:02d}.pth'))
 
         # dist.barrier()
 
