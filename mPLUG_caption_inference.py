@@ -112,7 +112,7 @@ class DataPreprocess:
 class ModelInference:
     def __init__(self, cfg: dict):
         self.config = cfg
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cpu"  # "cuda" if torch.cuda.is_available() else "cpu"
 
         # load model
         self.text_encoder = 'bert-base-uncased'
@@ -135,7 +135,8 @@ class ModelInference:
         checkpoint = torch.load(self.model_checkpoints_path, map_location='cpu')
         try:
             state_dict = checkpoint['model']
-        except:
+        except Exception as e:
+            print(f"load checkpoints error={e}")
             state_dict = checkpoint['module']
 
         # reshape positional embedding to accomodate for image resolution change
@@ -166,10 +167,13 @@ class ModelInference:
 
         batch_predict_result_list = []
         with torch.no_grad() and autocast():
-            for image_no, image_file_path, image in enumerate(image_result_list):
+            for image_no, (image_file_path, image) in enumerate(image_result_list):
+
                 image = image.to(self.device, non_blocking=True)
-                caption = self.config['eos']
-                question_input = self.config['bos']
+                image = torch.unsqueeze(image, dim=0)
+                image_no = [image_no]
+                caption = [self.config['eos']]
+                question_input = [self.config['bos'] + " "]
                 caption = self.tokenizer(caption, padding='longest', truncation=True,
                                          max_length=self.config['max_input_length'],
                                          return_tensors="pt").to(self.device)

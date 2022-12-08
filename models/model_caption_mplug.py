@@ -31,11 +31,12 @@ class MPLUG(nn.Module):
     def forward(self, image, question, answer=None, train=True, out_size=5, scst=False):
         if (scst):
             return self.beam_search(image, question, answer, train=True, out_size=out_size)
-        image = image.to(dtype=next(self.parameters()).dtype)
-        image_embeds = self.visual_encoder.visual(image, skip_last_layer=True, use_checkpoint=self.use_checkpoint)
+        image = image.to(dtype=next(self.parameters()).dtype)  # torch.Size([5, 3, 384, 384]) torch.float32
+        image_embeds = self.visual_encoder.visual(image, skip_last_layer=True,
+                                                  use_checkpoint=self.use_checkpoint)  # torch.Size([5, 577, 768])
         if self.large:
             image_embeds = self.dropout(self.visn_layer_norm(self.visn_fc(image_embeds)))
-        image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(image.device)
+        image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(image.device)  # torch.Size([5, 577])
 
         if train:
             answer_targets = answer.input_ids.masked_fill(answer.input_ids == self.tokenizer.pad_token_id, -100)

@@ -10,7 +10,8 @@ import json
 import torch
 
 
-def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_values_length: int = 0, device='cuda:0'):
+def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_values_length: int = 0,
+                      device='cuda:0'):
     """
     Make causal mask used for bi-directional self-attention.
     """
@@ -23,8 +24,10 @@ def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_
     if past_key_values_length > 0:
         mask = torch.cat([torch.zeros(tgt_len, past_key_values_length, dtype=dtype), mask], dim=-1)
     return mask[None, None, :, :].expand(bsz, 1, tgt_len, tgt_len + past_key_values_length)
+
+
 def build_predictor(args, tokenizer, symbols, model, logger=None):
-    scorer = None #GNMTGlobalScorer(args.alpha, length_penalty='wu')
+    scorer = None  # GNMTGlobalScorer(args.alpha, length_penalty='wu')
 
     translator = TextGenerator(args, model, tokenizer, symbols, global_scorer=scorer, logger=logger)
     return translator
@@ -66,12 +69,12 @@ class TextGenerator(object):
 
         self.args = args
         self.model = model
-        #TODO  generator
-        #self.generator = self.model.generator
+        # TODO  generator
+        # self.generator = self.model.generator
         self.vocab = vocab
         self.symbols = symbols
-        self.start_token = 101 #['[PAD]']
-        self.end_token = 102  #'[PAD]']
+        self.start_token = 101  # ['[PAD]']
+        self.end_token = 102  # '[PAD]']
 
         self.global_scorer = global_scorer
         self.beam_size = args['beam_size']
@@ -83,8 +86,6 @@ class TextGenerator(object):
         # for debugging
         self.beam_trace = self.dump_beam != ""
         self.beam_accum = None
-
-
 
         if self.beam_trace:
             self.beam_accum = {
@@ -121,14 +122,16 @@ class TextGenerator(object):
            Shouldn't need the original dataset.
         """
         if do_sample:
-            return self._fast_translate_batch(encoder_inputs, self.max_length, min_length=self.min_length, do_sample=do_sample,out_size=out_size)
+            return self._fast_translate_batch(encoder_inputs, self.max_length, min_length=self.min_length,
+                                              do_sample=do_sample, out_size=out_size)
         else:
             with torch.no_grad():
-                return self._fast_translate_batch(encoder_inputs, self.max_length, min_length=self.min_length, do_sample=do_sample,out_size=out_size)
+                return self._fast_translate_batch(encoder_inputs, self.max_length, min_length=self.min_length,
+                                                  do_sample=do_sample, out_size=out_size)
 
     def translate_batch_scst(self, encoder_inputs, do_sample=False, out_size=1):
-        return self._fast_translate_batch(encoder_inputs, self.max_length, min_length=self.min_length, do_sample=do_sample,out_size=out_size)
-
+        return self._fast_translate_batch(encoder_inputs, self.max_length, min_length=self.min_length,
+                                          do_sample=do_sample, out_size=out_size)
 
     def _fast_translate_batch(self,
                               encoder_inputs,
@@ -143,7 +146,7 @@ class TextGenerator(object):
         if do_sample:
             beam_size = 1
         else:
-            beam_size = self.beam_size
+            beam_size = self.beam_size  # 5
         if len(encoder_inputs) == 3:
             src_features, padding_mask, input_ids = encoder_inputs
         elif len(encoder_inputs) == 2:
@@ -158,19 +161,19 @@ class TextGenerator(object):
         batch_size = src_features.size(0)
         src_features = tile(src_features, beam_size, dim=0)
         attention_mask = tile(padding_mask, beam_size, dim=0)
-        #TODO support p_gen ...
+        # TODO support p_gen ...
         # if self.args.p_gen:
         #     src = tile(batch.src, beam_size, dim=0)
         batch_offset = torch.arange(
-            batch_size, dtype=torch.long, device=device)
+            batch_size, dtype=torch.long, device=device)  # tensor([0, 1, 2, 3, 4], device='cuda:0')
         beam_offset = torch.arange(
             0,
             batch_size * beam_size,
             step=beam_size,
             dtype=torch.long,
-            device=device)
+            device=device)  # tensor([ 0,  5, 10, 15, 20], device='cuda:0')
         if input_ids is not None:
-            alive_seq = tile(input_ids, beam_size, dim=0) 
+            alive_seq = tile(input_ids, beam_size, dim=0)
         else:
             alive_seq = torch.full(
                 [batch_size * beam_size, 1],
@@ -181,7 +184,7 @@ class TextGenerator(object):
         # Give full probability to the first beam on the first step.
         topk_log_probs = (
             torch.tensor([0.0] + [float("-inf")] * (beam_size - 1),
-                         device=device).repeat(batch_size))
+                         device=device).repeat(batch_size))  # torch.Tensor([0., -inf, -inf, -inf, -inf]*n)
 
         # Structure that holds finished hypotheses.
         hypotheses = [[] for _ in range(batch_size)]  # noqa: F812
@@ -195,23 +198,23 @@ class TextGenerator(object):
         dec_position_ids = None
 
         for step in range(max_length):
-            dec_feat_seq = self.model(alive_seq, 
-                                         encoder_hidden_states = src_features,
-                                         encoder_attention_mask = attention_mask,                                      
-                                         return_dict = True,
-                                         reduction = 'none')              
+            dec_feat_seq = self.model(alive_seq,
+                                      encoder_hidden_states=src_features,
+                                      encoder_attention_mask=attention_mask,
+                                      return_dict=True,
+                                      reduction='none')
 
-            dec_feat_seq = dec_feat_seq.logits[:, -1, :]
+            dec_feat_seq = dec_feat_seq.logits[:, -1, :]  # torch.Size([25, 30522])
             vocab_size = dec_feat_seq.size(-1)
             log_probs = torch.log(torch.softmax(dec_feat_seq.view(-1, vocab_size), dim=-1))
             if step < min_length:
-               log_probs[:, self.end_token] = -1e20
-            alpha = self.alpha #global_scorer.alpha
+                log_probs[:, self.end_token] = -1e20
+            alpha = self.alpha  # global_scorer.alpha
             if do_sample:
                 length_penalty = 1.0
             else:
                 length_penalty = ((5.0 + (step + 1)) / 6.0) ** alpha
-            
+
             if do_sample:
                 _scores = log_probs / self.args.temperature
                 _scores = top_k_top_p_filtering(
@@ -221,10 +224,10 @@ class TextGenerator(object):
                 topk_ids = torch.multinomial(F.softmax(_scores, dim=-1), num_samples=1)  # (batch_size * num_beams, 2)
                 # Compute next scores
                 _scores = F.log_softmax(_scores, dim=1)  # (batch_size * num_beams, vocab_size)
-                
+
                 _scores += topk_log_probs.view(-1).unsqueeze(1)
                 topk_scores = torch.gather(_scores, -1, topk_ids)  # (batch_size * num_beams, 2)
-                #log_probs +=   # (batch_size * num_beams, 2)
+                # log_probs +=   # (batch_size * num_beams, 2)
                 # Match shape of greedy beam search
                 topk_ids = topk_ids.view(-1, beam_size)  # (batch_size, 2 * num_beams)
                 topk_scores = topk_scores.view(-1, beam_size)  # (batch_size, 2 * num_beams)
@@ -250,20 +253,20 @@ class TextGenerator(object):
             # Append last prediction.
             alive_seq = torch.cat(
                 [alive_seq.index_select(0, select_indices),
-                 topk_ids.view(-1, 1)], -1)
+                 topk_ids.view(-1, 1)], -1)  # torch.Size([25, 2])
 
             is_finished = topk_ids.eq(self.end_token)
             if step + 1 == max_length:
-                is_finished.fill_(1) #self.end_token)
+                is_finished.fill_(1)  # self.end_token)
             # End condition is top beam is finished.
-            end_condition = is_finished[:, 0].eq(1) #self.end_token)
+            end_condition = is_finished[:, 0].eq(1)  # self.end_token)
             # Save finished hypotheses.
             if is_finished.any():
                 predictions = alive_seq.view(-1, beam_size, alive_seq.size(-1))
                 for i in range(is_finished.size(0)):
                     b = batch_offset[i]
                     if end_condition[i]:
-                        is_finished[i].fill_(1) #self.end_token)
+                        is_finished[i].fill_(1)  # self.end_token)
                     finished_hyp = is_finished[i].nonzero().view(-1)
                     # Store finished hypotheses for this batch.
                     for j in finished_hyp:
@@ -280,9 +283,9 @@ class TextGenerator(object):
                         #         results["scores"][b].append(score)
                         #         results["predictions"][b].append(pred)
                         # else:
-                            # score, pred = best_hyp[0]
-                            # results["scores"][b].append(score)
-                            # results["predictions"][b].append(pred)
+                        # score, pred = best_hyp[0]
+                        # results["scores"][b].append(score)
+                        # results["predictions"][b].append(pred)
                         for each in best_hyp[:beam_size]:
                             score, pred = each
                             results["scores"][b].append(score)
@@ -308,20 +311,21 @@ class TextGenerator(object):
             scores.append(each[:out_size])
         for each in results["predictions"]:
             pred_ids.append(each[:out_size])
-        return pred_ids,scores
+        return pred_ids, scores
+
     def _generate_no_beam_search(
-        self,
-        input_ids,
-        cur_len,
-        max_length,
-        do_sample,
-        temperature,
-        top_k,
-        top_p,
-        repetition_penalty,
-        pad_token_id,
-        eos_token_ids,
-        batch_size,
+            self,
+            input_ids,
+            cur_len,
+            max_length,
+            do_sample,
+            temperature,
+            top_k,
+            top_p,
+            repetition_penalty,
+            pad_token_id,
+            eos_token_ids,
+            batch_size,
     ):
         """ Generate sequences for each example without beam search (num_beams == 1).
             All returned sequence are generated independantly.
@@ -390,8 +394,8 @@ class TextGenerator(object):
             tokens_to_add = next_token * cur_unfinished + pad_token_id * (1 - cur_unfinished)
             input_ids = torch.cat([input_ids, tokens_to_add.unsqueeze(-1)], dim=-1)
 
-            #for t in input_ids:
-                #print(self.tokenizer.convert_ids_to_tokens(t.tolist()))
+            # for t in input_ids:
+            # print(self.tokenizer.convert_ids_to_tokens(t.tolist()))
 
             for eos_token_id in eos_token_ids:
                 cur_unfinished = cur_unfinished.mul(tokens_to_add.ne(eos_token_id).long())
@@ -420,8 +424,8 @@ class TextGenerator(object):
         # (batch_size, n_best, max_len), (batch_size, n_best)
         return input_ids.unsqueeze(1), logprobs.unsqueeze(1)
 
+
 def top_k_top_p_filtering(logits, top_k=10, top_p=1.0, filter_value=-float("Inf"), min_tokens_to_keep=1):
-    
     if top_k > 0:
         top_k = min(max(top_k, min_tokens_to_keep), logits.size(-1))  # Safety check
         # Remove all tokens with a probability less than the last token of the top-k
@@ -445,6 +449,7 @@ def top_k_top_p_filtering(logits, top_k=10, top_p=1.0, filter_value=-float("Inf"
         indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
         logits[indices_to_remove] = filter_value
     return logits
+
 
 class Translation(object):
     """
@@ -497,6 +502,7 @@ class Translation(object):
 
         return output
 
+
 def tile(x, count, dim=0):
     """
     Tiles x on dimension dim count times.
@@ -506,14 +512,14 @@ def tile(x, count, dim=0):
         perm[0], perm[dim] = perm[dim], perm[0]
         x = x.permute(perm).contiguous()
     out_size = list(x.size())
-    out_size[0] *= count
+    out_size[0] *= count  # out_size.shape >> [25, 577, 768]
     batch = x.size(0)
     x = x.view(batch, -1) \
-         .transpose(0, 1) \
-         .repeat(count, 1) \
-         .transpose(0, 1) \
-         .contiguous() \
-         .view(*out_size)
+        .transpose(0, 1) \
+        .repeat(count, 1) \
+        .transpose(0, 1) \
+        .contiguous() \
+        .view(*out_size)
     if dim != 0:
         x = x.permute(perm).contiguous()
     return x

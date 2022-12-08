@@ -115,6 +115,11 @@ def evaluation(model, data_loader, tokenizer, device, config):
     answer_input = None
     for n, (image, caption, object_labels, image_ids, gold_caption) in enumerate(
             metric_logger.log_every(data_loader, print_freq, header)):
+        # image: batch_image  torch.Size([5, 3, 384, 384])
+        # caption: batch_str, List[str]
+        # object_labels: batch_str, List[str]
+        # image_ids: List[str], ['val2014_img\\COCO_val2014_000000391895.jpg',...]
+        # gold_caption: List[List[str]]
         image = image.to(device, non_blocking=True)
         caption = [each + config['eos'] for each in caption]
         question_input = [config['bos'] + " " + each for each in object_labels]

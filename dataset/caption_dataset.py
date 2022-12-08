@@ -226,7 +226,11 @@ class coco_dataset(Dataset):
                     ann = self.ann[index]
                     continue
                 break
-
+        # image: torch.Size([3, 384, 384])
+        # caption: str with actual sentence
+        # object_label: word_str separate with space
+        # image_id: str image_path.parent + image_path.stem
+        # ann["gold_caption"]: List[str]
         return image, caption, object_label, image_id, ann["gold_caption"]
 
 
