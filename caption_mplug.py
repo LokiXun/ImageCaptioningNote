@@ -104,6 +104,7 @@ def train(model, data_loader, optimizer, tokenizer, epoch, warmup_steps, device,
             scheduler.step(i // step_size)
 
         del image, question_input, caption, loss
+        break
 
         # gather the stats from all processes
     metric_logger.synchronize_between_processes()
@@ -142,6 +143,7 @@ def evaluation(model, data_loader, tokenizer, device, config):
         for image_id, topk_id, topk_prob, gold_caption_list in zip(image_ids, topk_ids, topk_probs, gold_caption):
             ans = tokenizer.decode(topk_id[0]).replace("[SEP]", "").replace("[CLS]", "").replace("[PAD]", "").strip()
             result.append({"question_id": image_id, "pred_caption": ans, "gold_caption": gold_caption_list})
+        break
     return result
 
 
@@ -199,6 +201,12 @@ def cal_metric(result_file):
     return results
 
 
+def show_model_params_num(model: torch.nn.Module) -> None:
+    """显示模型参数量"""
+    total = sum([param.nelement() for param in model.parameters()])
+    print(f"Number of parameter: {total / 1e6:.2f}M")
+
+
 def main(args, config):
     utils.init_distributed_mode(args)
     print(f"Distributed mode result: args.distributed={args.distributed}")
@@ -249,6 +257,9 @@ def main(args, config):
     print("Creating model")
     model = MPLUG(config=config, tokenizer=tokenizer)
     model = model.to(device)
+    # show model's parameter numbers
+    total = sum([param.nelement() for param in model.parameters()])
+    print("Number of parameter: %.2fM" % (total / 1e6))
 
     if not args.do_two_optim:
         arg_opt = utils.AttrDict(config['optimizer'])
@@ -347,14 +358,18 @@ def main(args, config):
             with open(os.path.join(args.output_dir, "log.txt"), "a") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
+            checkpoint_save_dir = Path(args.output_dir).resolve().joinpath(args.log_time)
+            checkpoint_save_dir.mkdir(exist_ok=True, parents=True)
+            checkpoint_save_path = os.path.join(args.output_dir, checkpoint_save_dir, f'checkpoint_{1:02d}.pth')
+            print(f"checkpoint_save_path={checkpoint_save_path}")
             torch.save({
                 'model': model_without_ddp.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'lr_scheduler': lr_scheduler.state_dict(),
                 'config': config,
                 'epoch': epoch,
-            }, os.path.join(args.output_dir, args.log_time, f'checkpoint_{epoch:02d}.pth'))
-
+            }, checkpoint_save_path)
+            print(f"save success!checkpoint_save_path={checkpoint_save_path}")
         # dist.barrier()
 
     # vqa_result = evaluation(model, test_loader, tokenizer, device, config)

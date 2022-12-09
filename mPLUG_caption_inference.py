@@ -15,6 +15,7 @@ import datetime
 import json
 from pathlib import Path
 from typing import List, Optional, Dict, Tuple, Any, Union
+import time
 
 import torch
 from torchvision import transforms
@@ -76,7 +77,8 @@ class DataPreprocess:
             logger.exception(error_message)
             return False, error_message
 
-    def run(self, images_path_list: List[str]) -> Tuple[bool, List[Tuple[str, Union[str, torch.Tensor]]]]:
+    def run(self, images_path_list: List[str]) \
+            -> Tuple[bool, List[Tuple[str, Union[str, torch.Tensor]]], List[Tuple[str, Union[str, torch.Tensor]]]]:
         """
         process images
         Args:
@@ -102,11 +104,11 @@ class DataPreprocess:
             if not result_image_list:
                 raise DataPreprocessError(f"all image failed")
 
-            return True, result_image_list
+            return True, result_image_list, error_image_list
         except Exception as e:
             error_message = f"images_path_list={images_path_list} process error!"
             logger.exception(error_message)
-            return False, error_image_list
+            return False, [], error_image_list
 
 
 class ModelInference:
@@ -125,7 +127,13 @@ class ModelInference:
         self.caption_model = self._load_model()
         self.caption_model.eval()
 
-    def _load_model(self):
+    @staticmethod
+    def show_model_params_num(model: torch.nn.Module) -> None:
+        """显示模型参数量"""
+        total = sum([param.nelement() for param in model.parameters()])
+        print(f"Number of parameter: {total / 1e6:.2f}M")
+
+    def _load_model(self) -> torch.nn.Module:
         model = MPLUG(config=self.config, tokenizer=self.tokenizer)
         model = model.to(self.device)
         logger.info(f"initialize model success!")
@@ -168,7 +176,6 @@ class ModelInference:
         batch_predict_result_list = []
         with torch.no_grad() and autocast():
             for image_no, (image_file_path, image) in enumerate(image_result_list):
-
                 image = image.to(self.device, non_blocking=True)
                 image = torch.unsqueeze(image, dim=0)
                 image_no = [image_no]
@@ -181,12 +188,15 @@ class ModelInference:
                                                 max_length=self.config['max_input_length'],
                                                 return_tensors="pt").to(self.device)
 
+                start_time = time.time()
                 topk_ids, topk_probs = self.caption_model(image, question_input, caption, train=False)
+                print(f"rough reference(inaccurate)={(time.time() - start_time) * 1000}ms")
 
                 for image_id, topk_id, topk_prob in zip(image_no, topk_ids, topk_probs, ):
                     ans = self.tokenizer.decode(topk_id[0]).replace("[SEP]", "").replace("[CLS]", ""). \
                         replace("[PAD]", "").strip()
-                    batch_predict_result_list.append({"question_id": image_id, "pred_caption": ans, })
+                    batch_predict_result_list.append({"question_id": image_id, "pred_caption": ans,
+                                                      "image_filepath": image_file_path})
         return batch_predict_result_list
 
 
@@ -199,10 +209,15 @@ def main(inputs_image_path_list):
 
     data_preprocess = DataPreprocess(cfg=config)
     model_inference = ModelInference(cfg=config)
+    # model params Num
+    model_inference.show_model_params_num(model=model_inference.caption_model)
+
     # 数据预处理
-    success_flag, process_result = data_preprocess.run(inputs_image_path_list)
+    success_flag, process_result, error_result = data_preprocess.run(inputs_image_path_list)
     if not success_flag:
         raise DataPreprocessError(f"process_result={process_result}")
+    if error_result:
+        print(f"error_result={error_result}")
 
     # 1. inference
     batch_inference_result = model_inference.run(image_result_list=process_result)
@@ -214,10 +229,13 @@ def main(inputs_image_path_list):
 
 
 if __name__ == '__main__':
-    image_coco2014_base_path = Path(
-        r"C:\Users\Loki\workspace\Hobby_CVinternship\dataset_object_detection\coco2014\val2014_img/").resolve()
+    image_coco2014_base_path = Path(config['coco_root']).resolve().joinpath("val2014_img")
+    # WARNING valImageDir was `val2014_img` maybe needed to modify
+    custom_test_image_dir = Path("./checkpoints/").resolve()
     image_path_list: List[str] = [
-        image_coco2014_base_path.joinpath("COCO_val2014_000000000395.jpg").as_posix(),
-        image_coco2014_base_path.joinpath("COCO_val2014_000000000564.jpg").as_posix(),
+        # image_coco2014_base_path.joinpath("COCO_val2014_000000000395.jpg").as_posix(),
+        # image_coco2014_base_path.joinpath("COCO_val2014_000000000564.jpg").as_posix(),
+        custom_test_image_dir.joinpath("test1.jpg").as_posix(),
+        custom_test_image_dir.joinpath("test2.jpg").as_posix(),
     ]
     main(image_path_list)
